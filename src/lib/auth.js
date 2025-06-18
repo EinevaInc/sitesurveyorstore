@@ -1,5 +1,8 @@
 import { supabase } from './supabase'
 
+// Export the auth object for use in AuthContext
+export const auth = supabase.auth
+
 // ==================== AUTHENTICATION ====================
 
 export const signUp = async (email, password, username, fullName) => {
