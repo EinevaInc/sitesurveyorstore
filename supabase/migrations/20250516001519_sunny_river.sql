@@ -1,10 +1,28 @@
 /*
-  # Complete SiteSurveyor Database Schema
+  # SiteSurveyor Database Schema
   
-  This migration creates all necessary tables, relationships, and sample data
-  for the SiteSurveyor application.
-  
-  Run this in your Supabase SQL Editor to set up the complete database.
+  1. New Tables
+    - `profiles` - User profile information
+    - `categories` - Application categories
+    - `applications` - Geomatics applications (open source and pro)
+    - `app_downloads` - Download tracking
+    - `app_favorites` - User favorites
+    - `blog_posts` - Blog articles
+    - `blog_views` - Blog view tracking
+    - `blog_likes` - Blog likes
+    - `solution_requests` - User problem submissions
+    - `user_activity` - User activity tracking
+
+  2. Security
+    - Enable RLS on all tables
+    - Add appropriate policies for each table
+    - Secure user data access
+
+  3. Features
+    - UUID primary keys
+    - Automatic timestamps
+    - Utility functions for statistics
+    - Performance indexes
 */
 
 -- Enable required extensions
@@ -14,15 +32,13 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS profiles (
   id uuid REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
+  username text,
   full_name text,
-  organization text,
-  location text,
   bio text,
   avatar_url text,
   website text,
-  linkedin_url text,
-  github_url text,
-  is_verified boolean DEFAULT false,
+  organization text,
+  location text,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -242,8 +258,6 @@ CREATE TABLE IF NOT EXISTS solution_requests (
   urgency text CHECK (urgency IN ('low', 'medium', 'high')),
   location text,
   organization text,
-  status text DEFAULT 'pending' CHECK (status IN ('pending', 'reviewing', 'in_progress', 'completed', 'rejected')),
-  admin_notes text,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -343,6 +357,68 @@ CREATE TRIGGER update_blog_posts_updated_at
 CREATE TRIGGER update_solution_requests_updated_at
   BEFORE UPDATE ON solution_requests
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ==================== UTILITY FUNCTIONS ====================
+
+-- Function to increment app download count
+CREATE OR REPLACE FUNCTION increment_app_downloads(app_id uuid)
+RETURNS void AS $$
+BEGIN
+  UPDATE applications 
+  SET download_count = download_count + 1,
+      updated_at = now()
+  WHERE id = app_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to increment blog view count
+CREATE OR REPLACE FUNCTION increment_blog_views(post_id uuid)
+RETURNS void AS $$
+BEGIN
+  UPDATE blog_posts 
+  SET view_count = view_count + 1,
+      updated_at = now()
+  WHERE id = post_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get app statistics
+CREATE OR REPLACE FUNCTION get_app_statistics()
+RETURNS TABLE (
+  total_apps bigint,
+  open_source_apps bigint,
+  pro_apps bigint,
+  total_downloads bigint
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    COUNT(*) as total_apps,
+    COUNT(*) FILTER (WHERE app_type = 'open_source') as open_source_apps,
+    COUNT(*) FILTER (WHERE app_type = 'pro') as pro_apps,
+    COALESCE(SUM(download_count), 0) as total_downloads
+  FROM applications 
+  WHERE is_active = true;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get blog statistics
+CREATE OR REPLACE FUNCTION get_blog_statistics()
+RETURNS TABLE (
+  total_posts bigint,
+  total_views bigint,
+  total_likes bigint
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    COUNT(*) as total_posts,
+    COALESCE(SUM(view_count), 0) as total_views,
+    COALESCE(SUM(like_count), 0) as total_likes
+  FROM blog_posts 
+  WHERE is_published = true;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ==================== SAMPLE DATA ====================
 
@@ -553,65 +629,3 @@ INSERT INTO blog_posts (
   201,
   34
 );
-
--- ==================== UTILITY FUNCTIONS ====================
-
--- Function to increment app download count
-CREATE OR REPLACE FUNCTION increment_app_downloads(app_id uuid)
-RETURNS void AS $$
-BEGIN
-  UPDATE applications 
-  SET download_count = download_count + 1,
-      updated_at = now()
-  WHERE id = app_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Function to increment blog view count
-CREATE OR REPLACE FUNCTION increment_blog_views(post_id uuid)
-RETURNS void AS $$
-BEGIN
-  UPDATE blog_posts 
-  SET view_count = view_count + 1,
-      updated_at = now()
-  WHERE id = post_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Function to get app statistics
-CREATE OR REPLACE FUNCTION get_app_statistics()
-RETURNS TABLE (
-  total_apps bigint,
-  open_source_apps bigint,
-  pro_apps bigint,
-  total_downloads bigint
-) AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    COUNT(*) as total_apps,
-    COUNT(*) FILTER (WHERE app_type = 'open_source') as open_source_apps,
-    COUNT(*) FILTER (WHERE app_type = 'pro') as pro_apps,
-    COALESCE(SUM(download_count), 0) as total_downloads
-  FROM applications 
-  WHERE is_active = true;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Function to get blog statistics
-CREATE OR REPLACE FUNCTION get_blog_statistics()
-RETURNS TABLE (
-  total_posts bigint,
-  total_views bigint,
-  total_likes bigint
-) AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    COUNT(*) as total_posts,
-    COALESCE(SUM(view_count), 0) as total_views,
-    COALESCE(SUM(like_count), 0) as total_likes
-  FROM blog_posts 
-  WHERE is_published = true;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
